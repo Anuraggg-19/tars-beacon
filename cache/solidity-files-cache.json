@@ -1,0 +1,40 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "C:\\Users\\Anurag\\Desktop\\project-TARS\\tars-beacon\\contracts\\TarsReports.sol": {
+      "lastModificationDate": 1770203869217,
+      "contentHash": "e922182934d4445e2b067d4c851655e6",
+      "sourceName": "contracts/TarsReports.sol",
+      "solcConfig": {
+        "version": "0.8.18",
+        "settings": {
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.18"
+      ],
+      "artifacts": [
+        "TarsReports"
+      ]
+    }
+  }
+}
