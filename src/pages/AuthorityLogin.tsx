@@ -19,23 +19,49 @@ const AuthorityLogin = () => {
   const navigate = useNavigate();
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationStep, setVerificationStep] = useState<"idle" | "generating" | "verifying" | "success">("idle");
+  const [error, setError] = useState<string | null>(null);
 
   const handleZKPLogin = async () => {
     setIsVerifying(true);
-    
-    // Generate proof
-    setVerificationStep("generating");
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Verify proof
-    setVerificationStep("verifying");
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // Success
-    setVerificationStep("success");
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    navigate("/authority/dashboard");
+    setError(null);
+
+    try {
+      const { ethereum } = window as any;
+      if (!ethereum) {
+        setError("MetaMask is not installed. Please install the MetaMask extension and try again.");
+        return;
+      }
+
+      // This call will always trigger the MetaMask connection popup
+      // if the authority has not already connected this site.
+      setVerificationStep("generating");
+      const accounts: string[] = await ethereum.request({
+        method: "eth_requestAccounts",
+      });
+
+      if (!accounts || accounts.length === 0) {
+        setError("No accounts found in MetaMask. Please unlock or create an account and try again.");
+        return;
+      }
+
+      // Simulate ZKP verification steps after wallet connection
+      setVerificationStep("verifying");
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      setVerificationStep("success");
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      navigate("/authority/dashboard");
+    } catch (err: any) {
+      if (err?.code === 4001) {
+        setError("MetaMask connection request was rejected.");
+      } else {
+        console.error("MetaMask login error:", err);
+        setError("Failed to connect with MetaMask. Please try again.");
+      }
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   return (
@@ -55,7 +81,7 @@ const AuthorityLogin = () => {
               </p>
             </div>
 
-            {/* ZKP Login Card */}
+            {/* ZKP + MetaMask Login Card */}
             <Card variant="glass" className="mb-6">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -125,6 +151,14 @@ const AuthorityLogin = () => {
                         }}
                       />
                     </div>
+                  </div>
+                )}
+
+                {/* Error Message */}
+                {error && (
+                  <div className="flex items-center gap-2 text-destructive text-xs">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>{error}</span>
                   </div>
                 )}
 

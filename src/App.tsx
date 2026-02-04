@@ -23,6 +23,7 @@ const App = () => (
           <Route path="/submit" element={<SubmitReport />} />
           <Route path="/authority/login" element={<AuthorityLogin />} />
           <Route path="/authority/dashboard" element={<AuthorityDashboard />} />
+          {/* :id is the IPFS CID for this report */}
           <Route path="/authority/report/:id" element={<ReportDetail />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

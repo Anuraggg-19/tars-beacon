@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,9 +25,13 @@ import {
   CheckCircle
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { fetchJsonFromIpfs } from "@/lib/ipfs";
+import { decryptReportEnvelope, EncryptedReportEnvelope } from "@/lib/crypto";
+import { getReportsFromContract, OnChainReportRef } from "@/lib/contract";
 
-interface Report {
+interface DecryptedReport {
   id: string;
+  cid: string;
   category: string;
   timestamp: Date;
   aiScore: number;
@@ -36,61 +40,66 @@ interface Report {
   urgency: "low" | "medium" | "high" | "critical";
 }
 
-// Mock data
-const mockReports: Report[] = [
-  {
-    id: "RPT-001",
-    category: "Financial Fraud",
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    aiScore: 87,
-    reputationScore: 92,
-    status: "pending",
-    urgency: "high",
-  },
-  {
-    id: "RPT-002",
-    category: "Environmental Violation",
-    timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000),
-    aiScore: 94,
-    reputationScore: 85,
-    status: "verified",
-    urgency: "critical",
-  },
-  {
-    id: "RPT-003",
-    category: "Workplace Misconduct",
-    timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000),
-    aiScore: 45,
-    reputationScore: 60,
-    status: "flagged",
-    urgency: "low",
-  },
-  {
-    id: "RPT-004",
-    category: "Data Privacy Breach",
-    timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    aiScore: 78,
-    reputationScore: 88,
-    status: "pending",
-    urgency: "medium",
-  },
-  {
-    id: "RPT-005",
-    category: "Corruption",
-    timestamp: new Date(Date.now() - 48 * 60 * 60 * 1000),
-    aiScore: 91,
-    reputationScore: 95,
-    status: "verified",
-    urgency: "high",
-  },
-];
-
 const AuthorityDashboard = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [reports, setReports] = useState<DecryptedReport[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredReports = mockReports.filter(report => {
+  useEffect(() => {
+    const loadReports = async () => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const onChainReports: OnChainReportRef[] = await getReportsFromContract();
+
+        const decrypted: DecryptedReport[] = await Promise.all(
+          onChainReports.map(async (ref, index) => {
+            try {
+              const envelope = await fetchJsonFromIpfs<EncryptedReportEnvelope>(ref.cid);
+              const report = await decryptReportEnvelope(envelope);
+
+              // Placeholder scores for now – you can plug real AI / reputation later.
+              const aiScore = 80;
+              const reputationScore = 80;
+
+              return {
+                id: `RPT-${String(index + 1).padStart(3, "0")}`,
+                cid: ref.cid,
+                category: report.category || "Unknown",
+                timestamp: new Date(ref.timestamp * 1000),
+                aiScore,
+                reputationScore,
+                status: ref.status || "pending",
+                urgency: report.urgency || "medium",
+              };
+            } catch (innerErr) {
+              console.error("Failed to load/decrypt report", ref, innerErr);
+              // Skip reports that fail decryption for now
+              return null as unknown as DecryptedReport;
+            }
+          })
+        );
+
+        setReports(decrypted.filter(Boolean));
+      } catch (err: any) {
+        console.error("Failed to load reports:", err);
+        setError(
+          err?.message ||
+            "Unable to load reports from the blockchain. Please try again."
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadReports();
+  }, []);
+
+  const filteredReports = reports.filter(report => {
     const matchesSearch = report.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          report.category.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || report.status === statusFilter;
@@ -155,7 +164,7 @@ const AuthorityDashboard = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Total Reports</p>
-                    <p className="text-2xl font-bold">{mockReports.length}</p>
+                    <p className="text-2xl font-bold">{reports.length}</p>
                   </div>
                   <FileText className="w-8 h-8 text-primary opacity-50" />
                 </div>
@@ -166,7 +175,7 @@ const AuthorityDashboard = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Pending Review</p>
-                    <p className="text-2xl font-bold">{mockReports.filter(r => r.status === "pending").length}</p>
+                    <p className="text-2xl font-bold">{reports.filter(r => r.status === "pending").length}</p>
                   </div>
                   <Clock className="w-8 h-8 text-warning opacity-50" />
                 </div>
@@ -177,7 +186,7 @@ const AuthorityDashboard = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Verified</p>
-                    <p className="text-2xl font-bold">{mockReports.filter(r => r.status === "verified").length}</p>
+                    <p className="text-2xl font-bold">{reports.filter(r => r.status === "verified").length}</p>
                   </div>
                   <CheckCircle className="w-8 h-8 text-success opacity-50" />
                 </div>
@@ -188,7 +197,7 @@ const AuthorityDashboard = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Flagged</p>
-                    <p className="text-2xl font-bold">{mockReports.filter(r => r.status === "flagged").length}</p>
+                    <p className="text-2xl font-bold">{reports.filter(r => r.status === "flagged").length}</p>
                   </div>
                   <AlertTriangle className="w-8 h-8 text-destructive opacity-50" />
                 </div>
@@ -242,10 +251,26 @@ const AuthorityDashboard = () => {
 
           {/* Reports List */}
           <div className="space-y-4 animate-fade-in" style={{ animationDelay: "0.3s" }}>
-            {filteredReports.map((report, index) => (
+            {isLoading && (
+              <Card variant="glass">
+                <CardContent className="p-6 text-center text-sm text-muted-foreground">
+                  Loading reports from blockchain and IPFS...
+                </CardContent>
+              </Card>
+            )}
+
+            {error && (
+              <Card variant="glass">
+                <CardContent className="p-6 text-center text-sm text-destructive">
+                  {error}
+                </CardContent>
+              </Card>
+            )}
+
+            {!isLoading && !error && filteredReports.map((report) => (
               <Link 
                 key={report.id} 
-                to={`/authority/report/${report.id}`}
+                to={`/authority/report/${encodeURIComponent(report.cid)}`}
                 className="block"
               >
                 <Card 
@@ -303,7 +328,7 @@ const AuthorityDashboard = () => {
               </Link>
             ))}
 
-            {filteredReports.length === 0 && (
+            {!isLoading && !error && filteredReports.length === 0 && (
               <Card variant="glass">
                 <CardContent className="p-12 text-center">
                   <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />

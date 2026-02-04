@@ -22,6 +22,9 @@ import {
   Shield
 } from "lucide-react";
 import { SubmissionResult } from "@/pages/SubmitReport";
+import { encryptReportForAuthority } from "@/lib/crypto";
+import { uploadFileToIpfs, uploadJsonToIpfs } from "@/lib/ipfs";
+import { submitReportCidToContract } from "@/lib/contract";
 
 interface ReportFormProps {
   walletAddress: string;
@@ -57,6 +60,7 @@ export function ReportForm({ walletAddress, onSubmit }: ReportFormProps) {
     description: "",
   });
   const [files, setFiles] = useState<File[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -71,35 +75,70 @@ export function ReportForm({ walletAddress, onSubmit }: ReportFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setError(null);
 
-    // Simulate encryption
-    setCurrentStep("encrypting");
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      // Ensure MetaMask is connected for this submission.
+      const { ethereum } = window as any;
+      if (!ethereum) {
+        throw new Error("MetaMask is not installed. Please install the MetaMask extension and try again.");
+      }
+      await ethereum.request({ method: "eth_requestAccounts" });
 
-    // Simulate IPFS upload
-    setCurrentStep("uploading");
-    await new Promise(resolve => setTimeout(resolve, 2500));
+      // 1) Upload media files to IPFS (if any)
+      setCurrentStep("uploading");
+      const media = await Promise.all(
+        files.map(async (file) => {
+          const cid = await uploadFileToIpfs(file);
+          return {
+            name: file.name,
+            cid,
+            type: file.type,
+            size: file.size,
+          };
+        })
+      );
 
-    // Simulate blockchain transaction
-    setCurrentStep("blockchain");
-    await new Promise(resolve => setTimeout(resolve, 2000));
+      // 2) Build cleartext report object
+      const report = {
+        category: formData.category,
+        location: formData.location,
+        dateTime: formData.dateTime,
+        urgency: formData.urgency,
+        description: formData.description,
+        media,
+        walletAddress,
+      };
 
-    // Generate mock result
-    const result: SubmissionResult = {
-      cid: "Qm" + Array.from({ length: 44 }, () => 
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[
-          Math.floor(Math.random() * 62)
-        ]
-      ).join(""),
-      txHash: "0x" + Array.from({ length: 64 }, () => 
-        Math.floor(Math.random() * 16).toString(16)
-      ).join(""),
-      timestamp: new Date(),
-    };
+      // 3) Encrypt report in the browser
+      setCurrentStep("encrypting");
+      const envelope = await encryptReportForAuthority(report, walletAddress);
 
-    onSubmit(result);
-    setIsSubmitting(false);
-    setCurrentStep(null);
+      // 4) Upload encrypted envelope to IPFS
+      setCurrentStep("uploading");
+      const cid = await uploadJsonToIpfs(envelope);
+
+      // 5) Submit CID + timestamp to the blockchain smart contract
+      setCurrentStep("blockchain");
+      const { txHash, timestamp } = await submitReportCidToContract(cid);
+
+      const result: SubmissionResult = {
+        cid,
+        txHash,
+        timestamp,
+      };
+
+      onSubmit(result);
+    } catch (err: any) {
+      console.error("Failed to submit report:", err);
+      setError(
+        err?.message ||
+          "Something went wrong while submitting your report. Please try again."
+      );
+    } finally {
+      setIsSubmitting(false);
+      setCurrentStep(null);
+    }
   };
 
   const truncateAddress = (address: string) => 
@@ -294,6 +333,12 @@ export function ReportForm({ walletAddress, onSubmit }: ReportFormProps) {
           )}
         </Button>
       </form>
+
+      {error && (
+        <p className="mt-4 text-sm text-destructive">
+          {error}
+        </p>
+      )}
 
       {/* Loading Overlay */}
       {isSubmitting && (

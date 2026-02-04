@@ -15,16 +15,38 @@ export function WalletConnect({ onConnect }: WalletConnectProps) {
     setIsConnecting(true);
     setError(null);
 
-    // Simulate wallet connection
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // Generate a mock address
-    const mockAddress = "0x" + Array.from({ length: 40 }, () => 
-      Math.floor(Math.random() * 16).toString(16)
-    ).join("");
-    
-    onConnect(mockAddress);
-    setIsConnecting(false);
+    try {
+      // Check for MetaMask / injected provider
+      const { ethereum } = window as any;
+
+      if (!ethereum) {
+        setError("MetaMask is not installed. Please install the MetaMask extension and try again.");
+        return;
+      }
+
+      // Request account access – this will trigger the MetaMask popup
+      const accounts: string[] = await ethereum.request({
+        method: "eth_requestAccounts",
+      });
+
+      if (!accounts || accounts.length === 0) {
+        setError("No accounts found in MetaMask. Please create or unlock an account and try again.");
+        return;
+      }
+
+      const address = accounts[0];
+      onConnect(address);
+    } catch (err: any) {
+      // EIP-1193 user rejected request error
+      if (err?.code === 4001) {
+        setError("Connection request was rejected in MetaMask.");
+      } else {
+        console.error("MetaMask connection error:", err);
+        setError("Failed to connect to MetaMask. Please try again.");
+      }
+    } finally {
+      setIsConnecting(false);
+    }
   };
 
   const connectWalletConnect = async () => {
